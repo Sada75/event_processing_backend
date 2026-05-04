@@ -60,6 +60,22 @@ const run = async () => {
                 const event = JSON.parse(message.value.toString());
                 console.log("Received event : " , event);
 
+                // 🔹 Events per second (bucket by second)
+                const currentSecond = Math.floor(Date.now() / 1000);
+                await redis.incr(`events:${currentSecond}`) 
+
+
+                // expire after 60 seconds to keep only recent data for real-time analytics
+                await redis.expire(`events:${currentSecond}` , 60);
+
+
+                // track active users
+                await redis.sadd('active_users' , event.userId);
+                await redis.expire('active_users' , 60);
+
+                // track top users
+                await redis.zincrby('top_users', 1,event.userId);
+
                 // Store in pg
 
                 await pgClient.query(
