@@ -83,6 +83,8 @@ const run = async () => {
                     [event.eventId , event.userId , event.type , event.timestamp]
                 )
 
+                console.log("put in db");
+
                 // store in redis
 
                 await redis.incr('total_events');
