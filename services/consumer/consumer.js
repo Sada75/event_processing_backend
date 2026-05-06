@@ -83,7 +83,7 @@ const run = async () => {
                     [event.eventId , event.userId , event.type , event.timestamp]
                 )
 
-                console.log("put in db");
+                console.log(`Consumer ${process.pid} processing:`, event);
 
                 // store in redis
 

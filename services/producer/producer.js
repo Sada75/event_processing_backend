@@ -26,7 +26,10 @@ const run = async () => {
             await producer.send({
                 topic : 'user-events',
                 messages : [
-                    {value : JSON.stringify(event)}
+                    {
+                        key : event.userId,
+                        value : JSON.stringify(event)
+                    }
                 ]
             })
 
