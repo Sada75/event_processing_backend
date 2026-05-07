@@ -51,54 +51,80 @@ io.on('connection' , (socket) => {
     })
 })
 
-// 🔹 1. Total Events
-app.get('/metrics/total-events' , async (req , res) => {
-    const total = await redis.get('total_events');
-    res.json({total : total || 0})
-})
+app.get('/metrics/active-rides' , async (req, res) => {
+    const active = await redis.get('active_rides');
 
-// 🔹 2. Events per second (last 10 seconds)
-
-
-app.get('/metrics/events-per-second', async (req ,res) => {
-    const now = Math.floor(Date.now() / 1000);
-
-    let data = [];
-
-    for(let i = 0;i<10;i++){
-        const ts = now - i;
-        const count = await redis.get(`events:${ts}`);
-
-        data.push({
-            second : ts,
-            count : parseInt(count) || 0,
-        })
-
-    }
-    res.json(data.reverse());
-})
-
-// active users
-
-app.get('/metrics/active-users' , async ( req ,res ) => {
-    const users = await redis.smembers('active_users')
     res.json({
-        count : users.length , 
-        users
+        activeRides : parseInt(active || 0)
     })
 })
 
 
-// top users 
+app.get('/metrics/completed-rides' , async (req,res) => {
+    const completed = await redis.get('completed_rides')    ;
 
-app.get('/metrics/top-users' , async (req , res) => {
-    const users = await redis.zrevrange('top_users', 0 , 4 , 'WITHSCORES');
+    res.json({
+        completedRides : parseInt(completed || 0)
+    })
+})
+
+app.get("/metrics/cancelled-rides" , async (req, res) => {
+    const cancelled = await redis.get('cancelled_rides');
+
+    res.json({
+        cancelledRides : parseInt(cancelled || 0)
+    })
+})
+
+app.get("/metrics/top-areas" , async (req, res) => {
+    const areas = await redis.zrevrange(
+        'top_areas',
+        0,
+        9,
+        'WITHSCORES'
+    );
 
     let result = [];
-    for(let i=0;i<users.length;i = i + 2){
+    
+    for(let i=0;i<areas.length;i=i+2){
         result.push({
-            user : users[i],
-            count : parseInt(users[i+1]),
+            area : areas[i],
+            rides : parseInt(areas[i+1])
+        })
+    }
+
+    res.json(result);
+})
+
+
+app.get("/metrics/surge-areas" , async (req , res) => {
+    const keys = await redis.keys('surge:*');
+
+    const surgeAreas = keys.map((key) => {
+        const parts = key.split(':');
+
+        return {
+            city : parts[1],
+            area : parts[2]
+        }
+    })
+
+    res.json(surgeAreas);
+})
+
+app.get("/metrics/city-demand" , async (req , res) => {
+    const cities = ['Bangalore' , 'Mumbai'];
+
+    let result = [];
+
+    for(let i = 0;i<cities.length;i++){
+        const city = cities[i];
+
+        const count = await redis.get(`city:${city}:requests`);
+
+        result.push({
+            city : city , 
+            requests : parseInt(count || 0)
         })
     }
 

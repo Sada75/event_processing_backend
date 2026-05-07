@@ -51,44 +51,105 @@ const run = async () => {
 
     try{
         await consumer.subscribe({
-            topic : 'user-events',
+            topic : 'ride-events',
             fromBeginning : true,
         });
 
         await consumer.run({
             eachMessage : async( {message} ) => {
                 const event = JSON.parse(message.value.toString());
-                console.log("Received event : " , event);
+                console.log(`🚖 ${event.eventType} | ${event.rideId}`);
 
-                // 🔹 Events per second (bucket by second)
-                const currentSecond = Math.floor(Date.now() / 1000);
-                await redis.incr(`events:${currentSecond}`) 
+                if(event.eventType === 'RIDE_STARTED'){
+                    await redis.incr('active_rides');
+                }
+
+                if(event.eventType === 'RIDE_CANCELLED' || event.eventType === 'RIDE_COMPELETED'){
+                    await redis.decr('active_rides');
+                }
+
+                if(event.eventType === 'RIDE_COMPLETED'){
+                    await redis.incr("completed_rides");
+                }
+
+                if(event.eventType === 'RIDE_CANCELLED'){
+                    await redis.incr('cancelled_rides');
+                }
+
+                if(event.eventType === 'RIDE_REQUESTED'){
+                    await redis.incr(`city:${event.city}:requests`);
+                }
+
+                if(event.eventType === 'RIDE_REQUESTED'){
+                    await redis.zincrby(
+                        'top_areas',
+                        1,
+                        `${event.city} : ${event.area}`
+                    );
+                }
+
+                //surge detection 
+
+                const areakey = `area:${event.city}:${event.area}:requests`;
+
+                await redis.incr(areakey);
+                await redis.expire(areakey,60);
+
+                const areaRequests = await redis.get(areakey);
+
+                if(areaRequests > 20){
+                    console.log(
+                        `🔥 SURGE DETECTED in ${event.area}`
+                    );
+
+                    await redis.set(
+                        `surge:${event.city}:${event.area}`,
+                        'true',
+                        'EX',
+                        60
+                    );
+                }
 
 
-                // expire after 60 seconds to keep only recent data for real-time analytics
-                await redis.expire(`events:${currentSecond}` , 60);
+                //postgreSQL
 
+                try {
+                    await pgClient.query(
+                        `INSERT INTO events(
+                            event_id, 
+                            ride_id,
+                            event_type,
+                            rider_id,
+                            driver_id,
+                            city,
+                            area,
+                            fare,
+                            distance_km,
+                            duration_minutes,
+                            timestamp
+                        )
+                        VALUES
+                        ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                        `,
+                        [
+                            event.eventId,
+                            event.rideId,
+                            event.eventType,
+                            event.riderId,
+                            event.driverId,
+                            event.city,
+                            event.area,
+                            event.fare,
+                            parseFloat(event.distanceKm),
+                            event.durationMinutes || null,
+                            event.timestamp,
+                        ]
+                    );
 
-                // track active users
-                await redis.sadd('active_users' , event.userId);
-                await redis.expire('active_users' , 60);
-
-                // track top users
-                await redis.zincrby('top_users', 1,event.userId);
-
-                // Store in pg
-
-                await pgClient.query(
-                    `INSERT INTO events(event_id , user_id , type , timestamp) VALUES($1 , $2 , $3 , $4)`,
-                    [event.eventId , event.userId , event.type , event.timestamp]
-                )
-
-                console.log(`Consumer ${process.pid} processing:`, event);
-
-                // store in redis
-
-                await redis.incr('total_events');
-                await redis.incr(`user:${event.userId}:count`)
+                    console.log("stored in postgreSQL")
+                }catch(err){
+                    console.error('❌ PostgreSQL Insert Error:', err);
+                }
             },  
         })
     } catch(err){
