@@ -9,12 +9,16 @@ const io = new Server(server , {
     cors : {origin : "*"},
 })
 
+const cors = require('cors');
+
 const port = 3000;
 
 const redis = new Redis({
     host : '127.0.0.1',
     port : 6379,
 })
+
+app.use(cors());
 
 //websocket connection 
 
